@@ -22,12 +22,14 @@ from app import models  # noqa: F401 -- ensures models are registered before cre
 from app.ai_client import prewarm
 from app.routers import (
     auth, employees, hrms_sync, onboarding, dashboard, profile,
-    hr_assistant, tickets, monitoring,agent_ticketing
+    hr_assistant, tickets, monitoring,agent_ticketing,healthcheck,employeeDirectory,onboardingDetails
 )
+from app.tests.test import router as dashboard_router  # noqa: F401 -- ensures test router is registered before create_all  
 # TODO: from app.agents.monitoring_agent import monitoring_loop  -- uncomment
 # once at least one integrations/*_connector.py is implemented, see below.
 
 app = FastAPI(title="AI Orchestration POC API -- Employee Onboarding (v3)")
+app.include_router(dashboard_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +49,10 @@ app.include_router(tickets.router)
 app.include_router(monitoring.router)
 app.include_router(hr_assistant.router)
 app.include_router(agent_ticketing.router)
+app.include_router(healthcheck.router)
+app.include_router(employeeDirectory.router)
+app.include_router(onboardingDetails.router)
+
 # TODO: app.include_router(approvals.router) -- see routers/approvals.py's
 # module docstring, this is intentionally not wired in yet.
 

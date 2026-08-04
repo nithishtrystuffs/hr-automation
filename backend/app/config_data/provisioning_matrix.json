@@ -223,7 +223,7 @@
       "status": "functional",
       "agent_key": "identity",
       "remarks": "Standard (non-admin) role -- full admin access deliberately out of scope for this role."
-    },
+    },  
     {
       "item": "Email Account Creation",
       "software": "MailU",

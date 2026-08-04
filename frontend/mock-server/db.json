@@ -183,7 +183,7 @@
       "alerts": [
         { "id": "a1", "severity": "critical", "title": "OpenKM API Timeout",
           "body": "Blocking Client Document Repository (TKT-2004). Auto-retry scheduled 8/1 10:00 AM.",
-          "kind": "dismiss" },
+          "kind": "dismiss" },  
         { "id": "a2", "severity": "high", "title": "Finance Approval Pending",
           "body": "CCH Axcess Tax license ($15,000/yr) awaiting Finance sign-off.", "kind": "view" },
         { "id": "a3", "severity": "medium", "title": "Microsoft 365 Slow Response",

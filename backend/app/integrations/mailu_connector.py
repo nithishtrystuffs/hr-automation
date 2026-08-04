@@ -171,6 +171,61 @@ def _build_email_address(desired_local_part: str) -> str:
     local_part = desired_local_part.strip().lower().replace(" ", "")
     return f"{local_part}@{MAILU_DOMAIN}"
 
+import time
+
+
+def check_mailu_latency() -> dict:
+    """
+    Measure MailU API latency and report service health.
+
+    Returns:
+    {
+        "status": "UP" | "DOWN",
+        "status_code": int | None,
+        "latency_ms": float,
+        "error": str | None
+    }
+
+    Never raises MailUConnectorError.
+    """
+
+    if not MAILU_URL:
+        return {
+            "status": "DOWN",
+            "status_code": None,
+            "latency_ms": 0.0,
+            "error": "Missing MAILU_URL environment variable"
+        }
+
+    url = f"{MAILU_URL}/api/v1/user"
+    start = time.perf_counter()
+
+    try:
+        response = httpx.get(
+            url,
+            headers=_headers(),
+            timeout=_TIMEOUT_SECONDS
+        )
+
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+
+        return {
+            "status": "UP" if response.status_code < 500 else "DOWN",
+            "status_code": response.status_code,
+            "latency_ms": latency_ms,
+            "error": None
+        }
+
+    except httpx.RequestError as exc:
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+
+        return {
+            "status": "DOWN",
+            "status_code": None,
+            "latency_ms": latency_ms,
+            "error": str(exc)
+        }
+
 
 def _create_mailu_user(email: str, password: str, display_name: str) -> None:
     """
