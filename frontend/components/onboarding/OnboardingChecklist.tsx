@@ -1,6 +1,6 @@
 "use client";
 
-import { type ElementType, useState } from "react";
+import { type ElementType, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   CheckCircle2,
@@ -9,38 +9,110 @@ import {
   ShieldOff,
   Hourglass,
   X as CloseIcon,
+  Eye,
+  EyeOff,
+  FileText,
+  RefreshCw,
+  Ticket as TicketIcon,
+  ShieldCheck,
+  CalendarClock,
+  User,
+  Lock,
+  PartyPopper,
+  AlertCircle,
 } from "lucide-react";
 import type { ChecklistItem, ChecklistStatus } from "@/types/employee";
 import { StatusBadge } from "@/components/common/StatusBadge";
-
-// Shape of one entry inside db.json -> ProvisionalStatus[employeeId][]
-export type ProvisionalStatusEntry = {
-  platform: string;
-  ticketID: string;
-  ticketStatus: string;
-  startTime: string;
-  endtime: string;
-  credentials?: {
-    username?: string;
-    password?: string;
-  };
-  note?: string;
-};
+import { getProvisionalStatus } from "@/services/onboarding.service"; // <-- path to your endpoint file
+import type { ProvisionalStatusItem } from "@/types/onboarding";
 
 const iconMap: Record<ChecklistStatus, { icon: ElementType; bg: string; color: string }> = {
   done: { icon: CheckCircle2, bg: "#DCFCE7", color: "#16A34A" },
-  inProgress: { icon: Clock, bg: "#FEF3C7", color: "#D97706" },
+  inProgress: { icon: Clock, bg: "#DBEAFE", color: "#2563EB" },
   failed: { icon: XOctagon, bg: "#FEE2E2", color: "#DC2626" },
-  blocked: { icon: ShieldOff, bg: "#F3F4F6", color: "#6B7280" },
-  pending: { icon: Hourglass, bg: "#EEF2FF", color: "#6366F1" },
+  blocked: { icon: ShieldOff, bg: "#FEE2E2", color: "#DC2626" },
+  pending: { icon: Hourglass, bg: "#F3F4F6", color: "#6B7280" },
 };
 
 const statusLabelMap: Record<ChecklistStatus, string> = {
   done: "Completed",
   inProgress: "In Progress",
   failed: "Failed",
-  blocked: "Blocked",
-  pending: "Pending",
+  blocked: "Failed",
+  pending: "Not Started",
+};
+
+/**
+ * Theme used for the "Provisioning Result" section, section title, and the
+ * bottom note banner inside the modal. Driven by the checklist item's own
+ * status (done / inProgress / failed / blocked / pending) — NOT by the
+ * ticket's individual success/fail state — so the popup's overall color
+ * always matches what's shown on the card (blue = in progress,
+ * red = failed/blocked, green = done, grey = not started).
+ */
+const statusThemeMap: Record<
+  ChecklistStatus,
+  {
+    titleColor: string;
+    pillBg: string;
+    pillText: string;
+    noteBg: string;
+    noteBorder: string;
+    noteIconBg: string;
+    noteTitleColor: string;
+    noteTextColor: string;
+  }
+> = {
+  done: {
+    titleColor: "#16A34A",
+    pillBg: "#DCFCE7",
+    pillText: "#15803D",
+    noteBg: "#F0FDF4",
+    noteBorder: "#DCFCE7",
+    noteIconBg: "#16A34A",
+    noteTitleColor: "#166534",
+    noteTextColor: "#15803D",
+  },
+  inProgress: {
+    titleColor: "#2563EB",
+    pillBg: "#DBEAFE",
+    pillText: "#1D4ED8",
+    noteBg: "#EFF6FF",
+    noteBorder: "#DBEAFE",
+    noteIconBg: "#2563EB",
+    noteTitleColor: "#1E40AF",
+    noteTextColor: "#1D4ED8",
+  },
+  failed: {
+    titleColor: "#DC2626",
+    pillBg: "#FEE2E2",
+    pillText: "#B91C1C",
+    noteBg: "#FEF2F2",
+    noteBorder: "#FEE2E2",
+    noteIconBg: "#DC2626",
+    noteTitleColor: "#991B1B",
+    noteTextColor: "#B91C1C",
+  },
+  blocked: {
+    titleColor: "#DC2626",
+    pillBg: "#FEE2E2",
+    pillText: "#B91C1C",
+    noteBg: "#FEF2F2",
+    noteBorder: "#FEE2E2",
+    noteIconBg: "#DC2626",
+    noteTitleColor: "#991B1B",
+    noteTextColor: "#B91C1C",
+  },
+  pending: {
+    titleColor: "#6B7280",
+    pillBg: "#F3F4F6",
+    pillText: "#4B5563",
+    noteBg: "#F9FAFB",
+    noteBorder: "#E5E7EB",
+    noteIconBg: "#6B7280",
+    noteTitleColor: "#374151",
+    noteTextColor: "#4B5563",
+  },
 };
 
 const pcModalStyles = `
@@ -69,16 +141,6 @@ const pcModalStyles = `
   box-shadow:0 4px 12px rgba(22,33,62,.06);
 }
 
-.pc-kind-pill{
-  display:inline-block;
-  border-radius:999px;
-  background:#EEF2FF;
-  padding:2px 8px;
-  font-size:10px;
-  font-weight:700;
-  color:#4338CA;
-}
-
 .checklist-hint{
   font-size:11px;
   font-weight:600;
@@ -87,102 +149,225 @@ const pcModalStyles = `
 
 .pc-overlay{
   position:fixed;inset:0;z-index:9999;
-  background:rgba(22,20,45,.45);
+  background:rgba(20,33,61,.28);
   display:flex;align-items:center;justify-content:center;
   padding:20px;
+  animation:pc-overlay-in .15s ease-out;
 }
 
+@keyframes pc-overlay-in{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+
+@keyframes pc-modal-in{
+  from{ opacity:0; transform:translateY(8px) scale(.98); }
+  to{ opacity:1; transform:translateY(0) scale(1); }
+}
+
+/* Rectangular, fixed-proportion modal instead of a tall free-flowing card */
 .pc-modal{
   position:relative;
-  width:100%;max-width:440px;
+  width:100%;
+  max-width:600px;
   background:#ffffff;
-  border-radius:18px;
-  border:1px solid #E5E7EB;
-  box-shadow:0 20px 50px rgba(22,33,62,.18);
-  padding:26px;
+  border-radius:10px;
+  border:1px solid #ECEDF1;
+  box-shadow:0 16px 40px -8px rgba(20,33,61,.2);
+  padding:22px 22px 20px;
+  animation:pc-modal-in .18s cubic-bezier(.16,1,.3,1);
 }
 
 .pc-modal-close{
-  position:absolute;top:14px;right:14px;
-  width:28px;height:28px;border-radius:999px;
+  position:absolute;top:18px;right:18px;
+  width:26px;height:26px;border-radius:8px;
   display:flex;align-items:center;justify-content:center;
   border:1px solid #E5E7EB;
-  background:#F9FAFB;
-  color:#6B7280;
+  background:#ffffff;
+  color:#9CA3AF;
   cursor:pointer;
+  transition:background .15s ease, color .15s ease;
+  z-index:1;
 }
-.pc-modal-close:hover{ background:#F3F4F6; }
+.pc-modal-close:hover{ background:#F3F4F6; color:#14213D; }
+.pc-modal-close:focus-visible{ outline:2px solid #6366F1; outline-offset:2px; }
 
-.pc-modal-header{ display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-right:24px }
-.pc-modal-title{ font-size:16.5px;font-weight:800;color:#14213D }
-.pc-modal-status{ margin-bottom:16px }
-.pc-modal-body{ border-top:1px solid #E5E7EB;padding-top:14px }
-
-.checklist-detail-row{
-  display:flex;justify-content:space-between;
-  font-size:13px;color:#374151;
-  padding:6px 0;
+.pc-modal-header{ display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;padding-right:26px }
+.pc-modal-icon{
+  display:flex;align-items:center;justify-content:center;
+  width:42px;height:42px;border-radius:12px;
+  flex-shrink:0;
 }
-.checklist-detail-mono{
-  margin-top:8px;
-  font-family:monospace;
-  font-size:12px;
+.pc-modal-title{ font-size:16px;font-weight:800;color:#14213D;line-height:1.3 }
+.pc-modal-platform{ margin-top:1px;font-size:12.5px;color:#8A93A3 }
+
+.pc-modal-status{ margin-bottom:14px }
+
+.pc-details-card{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
   background:#F9FAFB;
-  border:1px solid #E5E7EB;
-  border-radius:8px;
-  padding:8px 10px;
-  color:#374151;
+  border:1px solid #EEF0F3;
+  border-radius:12px;
+  padding:11px 13px;
+  margin-bottom:16px;
 }
+.pc-details-left{ display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#374151; }
+.pc-details-right{ display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#4F46E5; }
+.pc-details-right svg{ flex-shrink:0; }
 
 .pc-section-title{
-  margin-top:14px;
-  margin-bottom:6px;
-  font-size:11px;
+  display:flex;align-items:center;gap:6px;
+  margin-bottom:8px;
+  font-size:11.5px;
   font-weight:800;
-  letter-spacing:.03em;
+  letter-spacing:.04em;
   text-transform:uppercase;
+}
+
+.checklist-detail-row{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:12px;
+  font-size:13px;color:#374151;
+  padding:8px 2px;
+}
+.pc-row-label{
+  display:flex;align-items:center;gap:8px;
   color:#6B7280;
+  font-weight:500;
+}
+.pc-row-label svg{ color:#9CA3AF;flex-shrink:0; }
+.pc-row-value{ font-weight:700;color:#1F2937; }
+
+.pc-status-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;font-weight:700;
+  padding:4px 10px;
+  border-radius:999px;
 }
 
 .pc-cred-box{
-  margin-top:8px;
+  margin-top:4px;
+  margin-bottom:4px;
   display:flex;
   flex-direction:column;
-  gap:6px;
-  background:#F9FAFB;
-  border:1px solid #E5E7EB;
-  border-radius:10px;
-  padding:10px 12px;
+  background:#F3F4F6;
+  border-radius:12px;
+  padding:3px 13px;
 }
 .pc-cred-row{
   display:flex;justify-content:space-between;
-  font-size:12.5px;
+  align-items:center;
+  gap:10px;
+  font-size:13px;
+  padding:9px 0;
 }
-.pc-cred-label{ color:#6B7280; }
-.pc-cred-value{ font-family:monospace; color:#14213D; }
+.pc-cred-row + .pc-cred-row{ border-top:1px solid #E5E7EB; }
+.pc-cred-label{
+  display:flex;align-items:center;gap:8px;
+  color:#4B5563;font-weight:500;
+}
+.pc-cred-label svg{ color:#9CA3AF;flex-shrink:0; }
+.pc-cred-value-wrap{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.pc-cred-value{
+  font-weight:700;
+  color:#14213D;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:150px;
+}
+
+.pc-icon-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:22px;
+  height:22px;
+  border-radius:6px;
+  border:none;
+  background:transparent;
+  color:#9CA3AF;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:background .15s ease, color .15s ease;
+}
+.pc-icon-btn:hover{ background:#E5E7EB; color:#374151; }
+.pc-icon-btn:focus-visible{ outline:2px solid #6366F1; outline-offset:2px; }
 
 .pc-note{
-  margin-top:8px;
+  margin-top:14px;
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  border-radius:14px;
+  padding:12px 14px;
+  position:relative;
+  overflow:hidden;
+}
+.pc-note-icon{
+  width:26px;height:26px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;margin-top:1px;
+  color:#fff;
+}
+.pc-note-title{ font-size:13px;font-weight:800; }
+.pc-note-text{ font-size:12.5px;line-height:1.45;margin-top:2px; }
+.pc-note-decoration{
+  position:absolute;right:10px;bottom:6px;
+  opacity:.5;
+}
+
+.pc-result-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0 24px;
+  align-items:start;
+}
+.pc-result-col-left .checklist-detail-row:first-child{ padding-top:2px; }
+.pc-result-col-right .pc-note{ margin-top:0; }
+
+@media (max-width: 640px){
+  .pc-result-grid{
+    grid-template-columns:1fr;
+    gap:4px 0;
+  }
+  .pc-result-col-right{ margin-top:4px; }
+}
+
+.pc-loading{
+  display:flex;align-items:center;gap:10px;
   font-size:12.5px;
-  color:#374151;
-  background:#EEF2FF;
-  border:1px solid #E0E7FF;
-  border-radius:10px;
-  padding:8px 10px;
+  color:#6B7280;
+  padding:8px 2px 4px;
+}
+.pc-loading-spinner{
+  width:14px;height:14px;
+  border-radius:999px;
+  border:2px solid #E5E7EB;
+  border-top-color:#6366F1;
+  animation:pc-spin .7s linear infinite;
+  flex-shrink:0;
+}
+@keyframes pc-spin{ to{ transform:rotate(360deg); } }
+
+@media (max-width: 480px){
+  .pc-modal{ padding:18px 16px 18px; }
 }
 `;
 
 /**
- * Finds the matching provisioning result for the currently open checklist
- * item, by comparing platform names (case-insensitive, loose match since
- * a checklist item's "platform" can list several systems e.g.
- * "M365 / CCH Axcess Tax / OpenKM" while ProvisionalStatus entries are
- * single-system).
+ * Matches a checklist item to its ProvisionalStatus entry by platform name
+ * (loose, case-insensitive match — a checklist item's "platform" can list
+ * several systems e.g. "M365 / CCH Axcess Tax / OpenKM" while
+ * ProvisionalStatus entries are single-system).
  */
 function findProvisionalMatch(
   item: ChecklistItem,
-  provisionalStatus: ProvisionalStatusEntry[] | undefined,
-): ProvisionalStatusEntry | undefined {
+  provisionalStatus: ProvisionalStatusItem[] | undefined,
+): ProvisionalStatusItem | undefined {
   if (!provisionalStatus || provisionalStatus.length === 0) return undefined;
 
   const platformText = item.platform.toLowerCase();
@@ -194,17 +379,59 @@ function findProvisionalMatch(
 
 export function OnboardingChecklist({
   items,
-  provisionalStatus,
+  employeeId,
 }: {
   items: ChecklistItem[];
-  /** ProvisionalStatus[employeeId] from db.json, for the employee these items belong to */
-  provisionalStatus?: ProvisionalStatusEntry[];
+  /** employee id -- used to call getProvisionalStatus internally */
+  employeeId: string;
 }) {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [provisionalStatus, setProvisionalStatus] = useState<ProvisionalStatusItem[]>([]);
+  const [loadingProvisional, setLoadingProvisional] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (!employeeId) return;
+
+    let cancelled = false;
+    setLoadingProvisional(true);
+
+    getProvisionalStatus(employeeId)
+      .then((data) => {
+        if (!cancelled) setProvisionalStatus(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProvisional(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeId]);
+
   const selectedItem = selectedIdx !== null ? items[selectedIdx] : null;
   const selectedProvisional = selectedItem
     ? findProvisionalMatch(selectedItem, provisionalStatus)
     : undefined;
+
+  // Ticket-level success/fail (used only for the small "Ticket Status" pill)
+  const isTicketSuccess = selectedProvisional?.ticketStatus?.toLowerCase() === "success";
+
+  // Overall modal theme is driven by the checklist item's own status —
+  // this is what fixes the "In Progress item shown in green" issue.
+  const theme = selectedItem ? statusThemeMap[selectedItem.status] : statusThemeMap.pending;
+  const isDone = selectedItem?.status === "done";
+  const isFailedLike = selectedItem?.status === "failed" || selectedItem?.status === "blocked";
+
+  const openItem = (idx: number) => {
+    setShowPassword(false);
+    setSelectedIdx(idx);
+  };
+
+  const closeModal = () => {
+    setShowPassword(false);
+    setSelectedIdx(null);
+  };
 
   return (
     <div>
@@ -214,7 +441,7 @@ export function OnboardingChecklist({
         {items.map((item, idx) => {
           const { icon: Icon, bg, color } = iconMap[item.status];
           return (
-            <div key={idx} className="pc-card flex flex-col gap-2.5" onClick={() => setSelectedIdx(idx)}>
+            <div key={idx} className="pc-card flex flex-col gap-2.5" onClick={() => openItem(idx)}>
               <div className="flex items-center gap-3">
                 <div
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -226,7 +453,6 @@ export function OnboardingChecklist({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-vantara-navy">{item.system}</span>
                   </div>
-                  <span className="pc-kind-pill">{item.kind}</span>
                   <div className="mt-0.5 text-xs text-vantara-text-muted">{item.platform}</div>
                 </div>
               </div>
@@ -242,15 +468,15 @@ export function OnboardingChecklist({
 
       {selectedItem &&
         createPortal(
-          <div className="pc-overlay" onClick={() => setSelectedIdx(null)}>
+          <div className="pc-overlay" onClick={closeModal}>
             <div className="pc-modal" onClick={(e) => e.stopPropagation()}>
-              <button className="pc-modal-close" onClick={() => setSelectedIdx(null)} aria-label="Close">
-                <CloseIcon size={16} />
+              <button className="pc-modal-close" onClick={closeModal} aria-label="Close">
+                <CloseIcon size={15} />
               </button>
 
               <div className="pc-modal-header">
                 <div
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                  className="pc-modal-icon"
                   style={{
                     background: iconMap[selectedItem.status].bg,
                     color: iconMap[selectedItem.status].color,
@@ -258,15 +484,12 @@ export function OnboardingChecklist({
                 >
                   {(() => {
                     const Icon = iconMap[selectedItem.status].icon;
-                    return <Icon size={18} />;
+                    return <Icon size={19} />;
                   })()}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="pc-modal-title">{selectedItem.system}</span>
-                    <span className="pc-kind-pill">{selectedItem.kind}</span>
-                  </div>
-                  <div className="text-xs text-vantara-text-muted">{selectedItem.platform}</div>
+                  <div className="pc-modal-title">{selectedItem.system}</div>
+                  <div className="pc-modal-platform">{selectedItem.platform}</div>
                 </div>
               </div>
 
@@ -274,220 +497,166 @@ export function OnboardingChecklist({
                 <StatusBadge status={statusLabelMap[selectedItem.status]} />
               </div>
 
-              <div className="pc-modal-body">
-                <div className="checklist-detail-row">
-                  <span>Type</span>
-                  <span>{selectedItem.kind}</span>
+              <div className="pc-details-card">
+                <div className="pc-details-left">
+                  <FileText size={15} />
+                  Details
                 </div>
-
-                <div className="checklist-detail-row">
-                  <span>Detail</span>
-                  <span>{selectedItem.detail}</span>
+                <div className="pc-details-right">
+                  <RefreshCw size={13} />
+                  {selectedItem.detail}
                 </div>
-
-                {selectedItem.responseTitle && (
-                  <>
-                    <div className="pc-response-title">{selectedItem.responseTitle}</div>
-
-                    <div className="checklist-detail-row">
-                      <span>Status</span>
-                      <span>{selectedItem.requestStatus}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Endpoint</span>
-                      <span>{selectedItem.endpoint}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Response Time</span>
-                      <span>{selectedItem.responseTime}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Executed At</span>
-                      <span>{selectedItem.executedAt}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Executed By</span>
-                      <span>{selectedItem.executedBy}</span>
-                    </div>
-
-                    {selectedItem.userId && (
-                      <div className="checklist-detail-row">
-                        <span>User ID</span>
-                        <span>{selectedItem.userId}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.username && (
-                      <div className="checklist-detail-row">
-                        <span>Username</span>
-                        <span>{selectedItem.username}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.realm && (
-                      <div className="checklist-detail-row">
-                        <span>Realm</span>
-                        <span>{selectedItem.realm}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.role && (
-                      <div className="checklist-detail-row">
-                        <span>Role</span>
-                        <span>{selectedItem.role}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.mailbox && (
-                      <div className="checklist-detail-row">
-                        <span>Mailbox</span>
-                        <span>{selectedItem.mailbox}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.domain && (
-                      <div className="checklist-detail-row">
-                        <span>Domain</span>
-                        <span>{selectedItem.domain}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.quota && (
-                      <div className="checklist-detail-row">
-                        <span>Quota</span>
-                        <span>{selectedItem.quota}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.employeeId && (
-                      <div className="checklist-detail-row">
-                        <span>Employee ID</span>
-                        <span>{selectedItem.employeeId}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.timesheetStatus && (
-                      <div className="checklist-detail-row">
-                        <span>Timesheet</span>
-                        <span>{selectedItem.timesheetStatus}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.defaultProject && (
-                      <div className="checklist-detail-row">
-                        <span>Project</span>
-                        <span>{selectedItem.defaultProject}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.assetTag && (
-                      <div className="checklist-detail-row">
-                        <span>Asset Tag</span>
-                        <span>{selectedItem.assetTag}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.assetType && (
-                      <div className="checklist-detail-row">
-                        <span>Asset</span>
-                        <span>{selectedItem.assetType}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.serialNumber && (
-                      <div className="checklist-detail-row">
-                        <span>Serial</span>
-                        <span>{selectedItem.serialNumber}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.assignedTo && (
-                      <div className="checklist-detail-row">
-                        <span>Assigned To</span>
-                        <span>{selectedItem.assignedTo}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.checkoutStatus && (
-                      <div className="checklist-detail-row">
-                        <span>Checkout</span>
-                        <span>{selectedItem.checkoutStatus}</span>
-                      </div>
-                    )}
-
-                    {selectedItem.steps && (
-                      <div className="pc-steps">
-                        <div className="pc-steps-title">Workflow</div>
-
-                        <ul>
-                          {selectedItem.steps.map((step, index) => (
-                            <li key={index}>{step}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* ---- ProvisionalStatus block (from db.json) ---- */}
-                {selectedProvisional && (
-                  <>
-                    <div className="pc-section-title">Provisioning Result</div>
-
-                    <div className="checklist-detail-row">
-                      <span>Ticket ID</span>
-                      <span>{selectedProvisional.ticketID}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Ticket Status</span>
-                      <span>{selectedProvisional.ticketStatus}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>Start Time</span>
-                      <span>{selectedProvisional.startTime}</span>
-                    </div>
-
-                    <div className="checklist-detail-row">
-                      <span>End Time</span>
-                      <span>{selectedProvisional.endtime}</span>
-                    </div>
-
-                    {selectedProvisional.credentials?.username && (
-                      <div className="pc-cred-box">
-                        <div className="pc-cred-row">
-                          <span className="pc-cred-label">Username</span>
-                          <span className="pc-cred-value">
-                            {selectedProvisional.credentials.username}
-                          </span>
-                        </div>
-                        {selectedProvisional.credentials?.password && (
-                          <div className="pc-cred-row">
-                            <span className="pc-cred-label">Password</span>
-                            <span className="pc-cred-value">
-                              {selectedProvisional.credentials.password}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {selectedProvisional.note && (
-                      <div className="pc-note">
-                        {selectedProvisional.note.replace(
-                          "{username}",
-                          selectedProvisional.credentials?.username ?? "",
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
+
+              {/* ---- ProvisionalStatus block (fetched from getProvisionalStatus) ---- */}
+              {loadingProvisional && (
+                <div className="pc-loading">
+                  <span className="pc-loading-spinner" />
+                  Loading provisioning result...
+                </div>
+              )}
+
+              {!loadingProvisional && selectedProvisional && (
+                <>
+                  <div className="pc-section-title" style={{ color: theme.titleColor }}>
+                    <ShieldCheck size={13} />
+                    Provisioning Result
+                  </div>
+
+                  <div className="pc-result-grid">
+                    <div className="pc-result-col-left">
+                      <div className="checklist-detail-row">
+                        <span className="pc-row-label">
+                          <TicketIcon size={14} />
+                          Ticket ID
+                        </span>
+                        <span className="pc-row-value">{selectedProvisional.ticketID}</span>
+                      </div>
+
+                      <div className="checklist-detail-row">
+                        <span className="pc-row-label">
+                          <ShieldCheck size={14} />
+                          Ticket Status
+                        </span>
+                        <span
+                          className="pc-status-pill"
+                          style={{
+                            background: isTicketSuccess ? "#DCFCE7" : "#FEE2E2",
+                            color: isTicketSuccess ? "#15803D" : "#B91C1C",
+                          }}
+                        >
+                          {isTicketSuccess ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                          {selectedProvisional.ticketStatus}
+                        </span>
+                      </div>
+
+                      <div className="checklist-detail-row">
+                        <span className="pc-row-label">
+                          <CalendarClock size={14} />
+                          Start Time
+                        </span>
+                        <span className="pc-row-value">{selectedProvisional.startTime}</span>
+                      </div>
+
+                      <div className="checklist-detail-row">
+                        <span className="pc-row-label">
+                          <CalendarClock size={14} />
+                          End Time
+                        </span>
+                        <span className="pc-row-value">{selectedProvisional.endtime}</span>
+                      </div>
+                    </div>
+
+                    <div className="pc-result-col-right">
+                      {selectedProvisional.credentials?.username && (
+                        <div className="pc-cred-box">
+                          <div className="pc-cred-row">
+                            <span className="pc-cred-label">
+                              <User size={14} />
+                              Username
+                            </span>
+                            <div className="pc-cred-value-wrap">
+                              <span className="pc-cred-value">
+                                {selectedProvisional.credentials.username}
+                              </span>
+                            </div>
+                          </div>
+                          {selectedProvisional.credentials?.password && (
+                            <div className="pc-cred-row">
+                              <span className="pc-cred-label">
+                                <Lock size={14} />
+                                Password
+                              </span>
+                              <div className="pc-cred-value-wrap">
+                                <span className="pc-cred-value">
+                                  {showPassword
+                                    ? selectedProvisional.credentials.password
+                                    : "•".repeat(selectedProvisional.credentials.password.length)}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="pc-icon-btn"
+                                  onClick={() => setShowPassword((prev) => !prev)}
+                                  aria-label={showPassword ? "Hide password" : "Show password"}
+                                >
+                                  {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div
+                        className="pc-note"
+                        style={{ background: theme.noteBg, border: `1px solid ${theme.noteBorder}` }}
+                      >
+                        <div className="pc-note-icon" style={{ background: theme.noteIconBg }}>
+                          {isDone ? (
+                            <CheckCircle2 size={14} />
+                          ) : isFailedLike ? (
+                            <XOctagon size={14} />
+                          ) : (
+                            <AlertCircle size={14} />
+                          )}
+                        </div>
+                        <div>
+                          <div className="pc-note-title" style={{ color: theme.noteTitleColor }}>
+                            {isDone
+                              ? "Provisioning Successful"
+                              : isFailedLike
+                              ? "Provisioning Failed"
+                              : "Provisioning In Progress"}
+                          </div>
+                          <div className="pc-note-text" style={{ color: theme.noteTextColor }}>
+                            {selectedProvisional.note
+                              ? selectedProvisional.note.replace(
+                                  "{username}",
+                                  selectedProvisional.credentials?.username ?? "",
+                                )
+                              : `${selectedItem.system} access for ${
+                                  selectedProvisional.credentials?.username ?? "the employee"
+                                } has been ${
+                                  isDone
+                                    ? "successfully processed"
+                                    : isFailedLike
+                                    ? "unable to complete — check ticket status for details"
+                                    : "processed — check ticket status for details"
+                                }.`}
+                          </div>
+                        </div>
+                        {isDone && (
+                          <PartyPopper
+                            size={30}
+                            className="pc-note-decoration"
+                            style={{ color: theme.titleColor }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body,

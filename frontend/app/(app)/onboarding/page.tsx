@@ -9,8 +9,6 @@ import { TrackerTable } from "@/components/onboarding/TrackerTable";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/select";
 
-const DEPTS = ["All", "Legal", "IT", "Compliance","Marketing","Finance"];
-
 export default function OnboardingTrackerPage() {
   const { data: employees, isLoading } = useOnboarding();
   const { search, dept, setSearch, setDept } = useTrackerStore();
@@ -23,6 +21,13 @@ export default function OnboardingTrackerPage() {
       icon: <ListChecks size={22} strokeWidth={2} />,
     });
   }, [setHeader]);
+
+
+  const depts = useMemo(() => {
+    if (!employees) return ["All"];
+    const unique = Array.from(new Set(employees.map((e) => e.dept))).sort();
+    return ["All", ...unique];
+  }, [employees]);
 
   const filtered = useMemo(() => {
     if (!employees) return [];
@@ -54,7 +59,7 @@ export default function OnboardingTrackerPage() {
 
             <SimpleSelect
               className="directory-select"
-              options={DEPTS}
+              options={depts}
               value={dept}
               onChange={(e) => setDept(e.target.value)}
               style={{ height: "34px", padding: "0 10px", fontSize: "13px" }}

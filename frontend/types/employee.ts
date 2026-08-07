@@ -34,7 +34,6 @@ export interface ChecklistItem {
   system: string;
   platform: string;
   status: ChecklistStatus;
-  kind: "Functional" | "Mock";
   detail: string;
   outcome: string;
 

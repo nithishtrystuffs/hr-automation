@@ -4,13 +4,10 @@ import { useEffect, useMemo } from "react";
 import { Users } from "lucide-react";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useDirectoryStore } from "@/store/directoryStore";
-import { useHeaderStore } from "@/store/headerStore";   // 👈 add
+import { useHeaderStore } from "@/store/headerStore";
 import { EmployeeTable } from "@/components/employee-directory/EmployeeTable";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/select";
-
-
-const DEPTS = ["All", "Legal", "IT", "Compliance","Marketing","Finance"];
 
 export default function EmployeeDirectoryPage() {
   const { data: employees, isLoading } = useEmployees();
@@ -24,6 +21,13 @@ export default function EmployeeDirectoryPage() {
       icon: <Users size={24} strokeWidth={2} />,
     });
   }, [setHeader]);
+
+  
+  const depts = useMemo(() => {
+    if (!employees) return ["All"];
+    const unique = Array.from(new Set(employees.map((e) => e.dept))).sort();
+    return ["All", ...unique];
+  }, [employees]);
 
   const filtered = useMemo(() => {
     if (!employees) return [];
@@ -41,11 +45,10 @@ export default function EmployeeDirectoryPage() {
   }, [employees, search, dept]);
 
   return (
-    // 👇 note: local title bar div REMOVE pannirukom, direct main content
     <main className="directory-bg flex-1 overflow-hidden">
-  <div className="page-content h-full">   {/* p-* class edhuvum illama irukkanum */}
-    <div className="directory-panel flex h-full flex-col">
-    
+      <div className="page-content h-full">
+        <div className="directory-panel flex h-full flex-col">
+
           <div
             className="directory-toolbar shrink-0"
             style={{
@@ -68,7 +71,7 @@ export default function EmployeeDirectoryPage() {
 
             <SimpleSelect
               className="directory-select"
-              options={DEPTS}
+              options={depts}
               value={dept}
               onChange={(e) => setDept(e.target.value)}
               style={{

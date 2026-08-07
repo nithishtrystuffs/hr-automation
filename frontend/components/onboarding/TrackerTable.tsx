@@ -49,18 +49,7 @@ export function TrackerTable({ employees }: { employees: Employee[] }) {
         </div>
       ),
     },
-    {
-      id: "status",
-      header: () => (
-        <div className="flex w-full items-center justify-center text-gray-700">Employment Lifecycle</div>
-      ),
-      accessorKey: "status",
-      cell: ({ row }) => (
-        <div className="flex w-full items-center justify-center">
-          <StatusBadge status={row.original.status} />
-        </div>
-      ),
-    },
+    
     {
       id: "blockers",
       header: () => (
